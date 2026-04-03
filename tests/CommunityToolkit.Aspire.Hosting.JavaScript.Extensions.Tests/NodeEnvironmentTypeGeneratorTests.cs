@@ -1,0 +1,193 @@
+using CommunityToolkit.Aspire.Hosting.JavaScript;
+
+namespace CommunityToolkit.Aspire.Hosting.JavaScript.Extensions.Tests;
+
+public class NodeEnvironmentTypeGeneratorTests
+{
+    [Fact]
+    public async Task GeneratesNodeJsProcessEnvNamespace()
+    {
+        var generator = new NodeEnvironmentTypeGenerator();
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await generator.GenerateAsync(tempDir, ["DATABASE_URL", "PORT"]);
+
+            var output = await File.ReadAllTextAsync(Path.Combine(tempDir, "aspire-env.d.ts"));
+
+            Assert.Contains("declare namespace NodeJS {", output);
+            Assert.Contains("interface ProcessEnv {", output);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IncludesAllFilteredVariables()
+    {
+        var generator = new NodeEnvironmentTypeGenerator();
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            string[] envVars = ["DATABASE_URL", "REDIS_URL", "PORT", "NODE_ENV"];
+
+            await generator.GenerateAsync(tempDir, envVars);
+
+            var output = await File.ReadAllTextAsync(Path.Combine(tempDir, "aspire-env.d.ts"));
+
+            Assert.Contains("DATABASE_URL", output);
+            Assert.Contains("REDIS_URL", output);
+            Assert.Contains("PORT", output);
+            Assert.Contains("NODE_ENV", output);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task VariablesAreOptionalStrings()
+    {
+        var generator = new NodeEnvironmentTypeGenerator();
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await generator.GenerateAsync(tempDir, ["MY_VAR"]);
+
+            var output = await File.ReadAllTextAsync(Path.Combine(tempDir, "aspire-env.d.ts"));
+
+            Assert.Contains("MY_VAR?: string;", output);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandlesEmptyEnvironmentVariables()
+    {
+        var generator = new NodeEnvironmentTypeGenerator();
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await generator.GenerateAsync(tempDir, []);
+
+            var output = await File.ReadAllTextAsync(Path.Combine(tempDir, "aspire-env.d.ts"));
+
+            Assert.Contains("declare namespace NodeJS {", output);
+            Assert.Contains("interface ProcessEnv {", output);
+            Assert.Contains("}", output);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RespectsCustomOutputPath()
+    {
+        var generator = new NodeEnvironmentTypeGenerator(outputPath: "types/env.d.ts");
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await generator.GenerateAsync(tempDir, ["MY_VAR"]);
+
+            Assert.True(File.Exists(Path.Combine(tempDir, "types", "env.d.ts")));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreatesDirectoryIfNotExists()
+    {
+        var generator = new NodeEnvironmentTypeGenerator(outputPath: "types/aspire-env.d.ts");
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            var typesDir = Path.Combine(tempDir, "types");
+            Assert.False(Directory.Exists(typesDir));
+
+            await generator.GenerateAsync(tempDir, ["MY_VAR"]);
+
+            Assert.True(File.Exists(Path.Combine(typesDir, "aspire-env.d.ts")));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task OverwritesExistingFile()
+    {
+        var generator = new NodeEnvironmentTypeGenerator();
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await generator.GenerateAsync(tempDir, ["FIRST_VAR"]);
+
+            var outputPath = Path.Combine(tempDir, "aspire-env.d.ts");
+            var firstContent = await File.ReadAllTextAsync(outputPath);
+            Assert.Contains("FIRST_VAR", firstContent);
+
+            await generator.GenerateAsync(tempDir, ["SECOND_VAR"]);
+
+            var secondContent = await File.ReadAllTextAsync(outputPath);
+            Assert.Contains("SECOND_VAR", secondContent);
+            Assert.DoesNotContain("FIRST_VAR", secondContent);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DefaultOutputPathIsAtProjectRoot()
+    {
+        var generator = new NodeEnvironmentTypeGenerator();
+        Assert.Equal("aspire-env.d.ts", generator.OutputPath);
+    }
+
+    [Fact]
+    public async Task OutputContainsAutoGeneratedComment()
+    {
+        var generator = new NodeEnvironmentTypeGenerator();
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await generator.GenerateAsync(tempDir, ["MY_VAR"]);
+
+            var output = await File.ReadAllTextAsync(Path.Combine(tempDir, "aspire-env.d.ts"));
+
+            Assert.Contains("Auto-generated by Aspire", output);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    private static string CreateTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(path);
+        return path;
+    }
+}
